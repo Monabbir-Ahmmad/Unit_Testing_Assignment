@@ -6,7 +6,6 @@ namespace OnlineShopping
     {
         public string Address { get; set; }
         public string PhoneNo { get; set; }
-
         private Cart _cart = new Cart();
 
         public Response Login(string email, string password)
@@ -232,7 +231,7 @@ namespace OnlineShopping
             return _cart.ViewProductsInCart();
         }
 
-        public Response MakePurchase(int cartId, Payment payment)
+        public Response MakePurchase(int cartId, CreditCard card, string cardPin, IPayment payment)
         {
             var cart = Database.Carts.FirstOrDefault(c => c.Id == cartId && c.CustomerId == Id);
 
@@ -243,7 +242,35 @@ namespace OnlineShopping
                     Message = "Cart not found"
                 };
 
-            return new Response { StatusCode = HttpStatusCode.OK, Message = "Purchase successful" };
+            if (!payment.CheckIfCardIsSupported(card))
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Card not supported"
+                };
+
+            if (!payment.CheckIfCardIsValid(card))
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Card is invalid"
+                };
+
+            if (!payment.CheckIfPayable(card, cart.TotalPrice))
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Forbidden,
+                    Message = "Not enough funds in card"
+                };
+
+            if (!payment.CheckIfPinIsValid(card, cardPin))
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Forbidden,
+                    Message = "Invalid card pin"
+                };
+
+            return payment.Pay(card, cart.TotalPrice);
         }
     }
 }

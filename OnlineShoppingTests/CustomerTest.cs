@@ -1,4 +1,5 @@
 using System.Net;
+using Moq;
 using OnlineShopping;
 using Xunit;
 
@@ -7,6 +8,8 @@ namespace OnlineShoppingTests
     [Collection("Sequential")]
     public class CustomerTest
     {
+        private readonly Mock<IPayment> _paymentMock = new Mock<IPayment>();
+
         [Fact]
         public void Login_ValuesAreValid()
         {
@@ -422,6 +425,182 @@ namespace OnlineShoppingTests
             // Assert
             Assert.Equal(HttpStatusCode.OK, result.StatusCode);
             Assert.Equal("Checkout successful", result.Message);
+        }
+
+        [Fact]
+        public void MakePurchase_CartNotFound()
+        {
+            // Arrange
+            var customer = new Customer();
+
+            // Act
+            var result = customer.MakePurchase(0, new CreditCard(), "23A", _paymentMock.Object);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.NotFound, result.StatusCode);
+            Assert.Equal("Cart not found", result.Message);
+        }
+
+        [Fact]
+        public void MakePurchase_CreditCardIsNotSupported()
+        {
+            // Arrange
+            Database.ClearDatabase();
+            DataGenerator.GenerateProducts(10);
+            var customer = new Customer();
+            customer.Id = 1;
+            customer.AddToCart(1, 10);
+            customer.Checkout();
+            _paymentMock
+                .Setup(x => x.CheckIfCardIsSupported(It.IsAny<CreditCard>()))
+                .Returns(false);
+
+            // Act
+            var result = customer.MakePurchase(1, new CreditCard(), "1234", _paymentMock.Object);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
+            Assert.Equal("Card not supported", result.Message);
+        }
+
+        [Fact]
+        public void MakePurchase_CreditCardIsInvalid()
+        {
+            // Arrange
+            Database.ClearDatabase();
+            DataGenerator.GenerateProducts(10);
+            var customer = new Customer();
+            customer.Id = 1;
+            customer.AddToCart(1, 10);
+            customer.Checkout();
+            _paymentMock.Setup(x => x.CheckIfCardIsSupported(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock.Setup(x => x.CheckIfCardIsValid(It.IsAny<CreditCard>())).Returns(false);
+
+            // Act
+            var result = customer.MakePurchase(1, new CreditCard(), "1234", _paymentMock.Object);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
+            Assert.Equal("Card is invalid", result.Message);
+        }
+
+        [Fact]
+        public void MakePurchase_CheckIfPayable()
+        {
+            // Arrange
+            Database.ClearDatabase();
+            DataGenerator.GenerateProducts(10);
+            var customer = new Customer();
+            customer.Id = 1;
+            customer.AddToCart(1, 10);
+            customer.Checkout();
+            _paymentMock.Setup(x => x.CheckIfCardIsSupported(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock.Setup(x => x.CheckIfCardIsValid(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock
+                .Setup(x => x.CheckIfPayable(It.IsAny<CreditCard>(), It.IsAny<decimal>()))
+                .Returns(false);
+
+            // Act
+            var result = customer.MakePurchase(1, new CreditCard(), "123", _paymentMock.Object);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.Forbidden, result.StatusCode);
+            Assert.Equal("Not enough funds in card", result.Message);
+        }
+
+        [Fact]
+        public void MakePurchase_CheckIfPinIsValid()
+        {
+            // Arrange
+            Database.ClearDatabase();
+            DataGenerator.GenerateProducts(10);
+            var customer = new Customer();
+            customer.Id = 1;
+            customer.AddToCart(1, 10);
+            customer.Checkout();
+            _paymentMock.Setup(x => x.CheckIfCardIsSupported(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock.Setup(x => x.CheckIfCardIsValid(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock
+                .Setup(x => x.CheckIfPayable(It.IsAny<CreditCard>(), It.IsAny<decimal>()))
+                .Returns(true);
+            _paymentMock
+                .Setup(x => x.CheckIfPinIsValid(It.IsAny<CreditCard>(), It.IsAny<string>()))
+                .Returns(false);
+
+            // Act
+            var result = customer.MakePurchase(1, new CreditCard(), "123", _paymentMock.Object);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.Forbidden, result.StatusCode);
+            Assert.Equal("Invalid card pin", result.Message);
+        }
+
+        [Fact]
+        public void MakePurchase_SomethingWhenWrongOnPay()
+        {
+            // Arrange
+            Database.ClearDatabase();
+            DataGenerator.GenerateProducts(10);
+            var customer = new Customer();
+            customer.Id = 1;
+            customer.AddToCart(1, 10);
+            customer.Checkout();
+            _paymentMock.Setup(x => x.CheckIfCardIsSupported(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock.Setup(x => x.CheckIfCardIsValid(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock
+                .Setup(x => x.CheckIfPayable(It.IsAny<CreditCard>(), It.IsAny<decimal>()))
+                .Returns(true);
+            _paymentMock
+                .Setup(x => x.CheckIfPinIsValid(It.IsAny<CreditCard>(), It.IsAny<string>()))
+                .Returns(true);
+            _paymentMock
+                .Setup(x => x.Pay(It.IsAny<CreditCard>(), It.IsAny<decimal>()))
+                .Returns(
+                    new Response
+                    {
+                        StatusCode = HttpStatusCode.BadRequest,
+                        Message = "Something went wrong"
+                    }
+                );
+
+            // Act
+            var result = customer.MakePurchase(1, new CreditCard(), "123", _paymentMock.Object);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.BadRequest, result.StatusCode);
+            Assert.Equal("Something went wrong", result.Message);
+        }
+
+        [Fact]
+        public void MakePurchase_Valid()
+        {
+            // Arrange
+            Database.ClearDatabase();
+            DataGenerator.GenerateProducts(10);
+            var customer = new Customer();
+            customer.Id = 1;
+            customer.AddToCart(1, 10);
+            customer.Checkout();
+            _paymentMock.Setup(x => x.CheckIfCardIsSupported(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock.Setup(x => x.CheckIfCardIsValid(It.IsAny<CreditCard>())).Returns(true);
+            _paymentMock
+                .Setup(x => x.CheckIfPayable(It.IsAny<CreditCard>(), It.IsAny<decimal>()))
+                .Returns(true);
+            _paymentMock
+                .Setup(x => x.CheckIfPinIsValid(It.IsAny<CreditCard>(), It.IsAny<string>()))
+                .Returns(true);
+            _paymentMock
+                .Setup(x => x.Pay(It.IsAny<CreditCard>(), It.IsAny<decimal>()))
+                .Returns(
+                    new Response { StatusCode = HttpStatusCode.OK, Message = "Payment successful" }
+                );
+
+            // Act
+            var result = customer.MakePurchase(1, new CreditCard(), "123", _paymentMock.Object);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, result.StatusCode);
+            Assert.Equal("Payment successful", result.Message);
         }
     }
 }
