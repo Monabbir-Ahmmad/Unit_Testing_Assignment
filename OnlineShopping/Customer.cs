@@ -1,44 +1,249 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
-using System.Security.Cryptography;
-using System.Threading.Tasks;
 
 namespace OnlineShopping
 {
     public class Customer : UserBase
     {
-        public static List<Customer> Customers = new List<Customer>();
-
         public string Address { get; set; }
         public string PhoneNo { get; set; }
 
-        private Cart _cart = new Cart { Id = RandomNumberGenerator.GetInt32(1, 9999) };
+        private Cart _cart = new Cart();
 
-        public List<Product> ViewProducts()
+        public Response Login(string email, string password)
         {
-            return Product.Products;
+            var customer = Database.Customers.FirstOrDefault(
+                c => c.Email == email && c.Password == password
+            );
+            if (customer == null)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Invalid email or password"
+                };
+
+            Id = customer.Id;
+            return new Response { StatusCode = HttpStatusCode.OK, Message = "Login successful" };
         }
 
-        public HttpStatusCode AddToCart(int productId)
+        public Response ChangePassword(int id, string oldPassword, string newPassword)
         {
-            var product = Product.Products.FirstOrDefault(p => p.Id == productId);
-            if (product == null)
-                return HttpStatusCode.NotFound;
+            var customer = Database.Customers.FirstOrDefault(c => c.Id == id);
 
-            _cart.Products.Add(product);
-            return HttpStatusCode.OK;
+            if (customer == null)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Customer not found"
+                };
+
+            if (customer.Password != oldPassword)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Old password is incorrect"
+                };
+
+            var strongPassword = new System.Text.RegularExpressions.Regex(
+                @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,15}$"
+            );
+
+            if (!strongPassword.IsMatch(newPassword))
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "New password is weak"
+                };
+
+            Database.Customers.Find(c => c.Id == id).Password = newPassword;
+
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Password changed successfully"
+            };
         }
 
-        public HttpStatusCode RemoveFromCart(int productId)
+        public Response UpdateProfile(Customer customer)
         {
-            var product = _cart.Products.FirstOrDefault(p => p.Id == productId);
-            if (product == null)
-                return HttpStatusCode.NotFound;
+            if (
+                customer == null
+                || string.IsNullOrEmpty(customer.Name)
+                || string.IsNullOrEmpty(customer.Email)
+                || string.IsNullOrEmpty(customer.Address)
+                || string.IsNullOrEmpty(customer.PhoneNo)
+            )
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Invalid customer details"
+                };
 
-            _cart.Products.Remove(product);
-            return HttpStatusCode.OK;
+            var existingCustomer = Database.Customers.FirstOrDefault(c => c.Id == customer.Id);
+
+            if (existingCustomer == null)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Customer not found"
+                };
+
+            var emailSyntax = new System.Text.RegularExpressions.Regex(
+                @"^([\w\.\-]+)@([\w\-]+)((\.(\w){2,3})+)$"
+            );
+
+            if (!emailSyntax.IsMatch(customer.Email))
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Invalid email address"
+                };
+
+            if (Database.Customers.Any(c => c.Email == customer.Email && c.Id != customer.Id))
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Conflict,
+                    Message = "Email already exists"
+                };
+
+            var customerIndex = Database.Customers.IndexOf(existingCustomer);
+
+            Database.Customers[customerIndex] = customer;
+
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Profile updated successfully"
+            };
+        }
+
+        public Response AddToCart(int productId, int quantity)
+        {
+            var product = Database.Products.FirstOrDefault(p => p.Id == productId);
+
+            if (product == null)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Product not found"
+                };
+
+            if (quantity <= 0)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Invalid quantity"
+                };
+
+            for (int i = 0; i < quantity; i++)
+            {
+                _cart.AddToCart(product);
+            }
+
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Product added to cart successfully"
+            };
+        }
+
+        public Response RemoveFromCart(int productId, int quantity)
+        {
+            var products = _cart.ViewProductsInCart().FindAll(p => p.Id == productId);
+
+            if (products.Count == 0)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Product not found in cart"
+                };
+
+            if (quantity <= 0)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Invalid quantity"
+                };
+
+            if (quantity > products.Count)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Quantity is greater than the number of products in cart"
+                };
+
+            for (int i = 0; i < quantity; i++)
+            {
+                _cart.RemoveFromCart(productId);
+            }
+
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Product removed from cart successfully"
+            };
+        }
+
+        public Response ClearCart()
+        {
+            _cart.ClearCart();
+
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Cart cleared successfully"
+            };
+        }
+
+        public Response Checkout()
+        {
+            if (_cart.NumberOfProducts == 0)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Cart is empty"
+                };
+
+            if (_cart.TotalPrice > 1000)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Forbidden,
+                    Message = "Total price is over the checkout limit"
+                };
+
+            if (Id == 0)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Unauthorized,
+                    Message = "Customer not logged in"
+                };
+
+            _cart.Id = Database.Carts.Count + 1;
+            _cart.CustomerId = Id;
+
+            Database.Carts.Add(_cart);
+
+            _cart = new Cart();
+
+            return new Response { StatusCode = HttpStatusCode.OK, Message = "Checkout successful" };
+        }
+
+        public List<Product> ViewCart()
+        {
+            return _cart.ViewProductsInCart();
+        }
+
+        public Response MakePurchase(int cartId, Payment payment)
+        {
+            var cart = Database.Carts.FirstOrDefault(c => c.Id == cartId && c.CustomerId == Id);
+
+            if (cart == null)
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Cart not found"
+                };
+
+            return new Response { StatusCode = HttpStatusCode.OK, Message = "Purchase successful" };
         }
     }
 }

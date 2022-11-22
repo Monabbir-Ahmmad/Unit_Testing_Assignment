@@ -7,73 +7,108 @@ namespace OnlineShopping
         public List<Product> ViewProducts()
         {
             // Code to view product
-            return Product.Products;
+            return Database.Products;
         }
 
-        public HttpStatusCode AddProduct(string name, string group, string subGroup, decimal price)
+        public Response AddProduct(string name, string group, string subGroup, decimal price)
         {
             if (
                 string.IsNullOrEmpty(name)
                 || string.IsNullOrEmpty(group)
                 || string.IsNullOrEmpty(subGroup)
             )
-                return HttpStatusCode.BadRequest;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Invalid product details"
+                };
 
             if (price <= 0)
-                return HttpStatusCode.Forbidden;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Forbidden,
+                    Message = "Invalid product price"
+                };
 
             if (
-                Product.Products.Any(
+                Database.Products.Any(
                     p => p.Name == name && p.Group == group && p.SubGroup == subGroup
                 )
             )
-                return HttpStatusCode.Conflict;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Conflict,
+                    Message = "Product already exists"
+                };
 
             // Code to add product
-
-            Product.Products.Add(
+            Database.Products.Add(
                 new Product
                 {
-                    Id = Product.Products.Count + 1,
+                    Id = Database.Products.Count + 1,
                     Name = name,
                     Group = group,
                     SubGroup = subGroup,
                     Price = price
                 }
             );
-            return HttpStatusCode.OK;
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Product added successfully"
+            };
         }
 
-        public HttpStatusCode DeleteProduct(int productId)
+        public Response DeleteProduct(int productId)
         {
             // Code to delete product
-            var product = Product.Products.FirstOrDefault(p => p.Id == productId);
+            var product = Database.Products.FirstOrDefault(p => p.Id == productId);
             if (product == null)
-                return HttpStatusCode.NotFound;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Product not found"
+                };
 
-            Product.Products.Remove(product);
-            return HttpStatusCode.OK;
+            Database.Products.Remove(product);
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Product deleted successfully"
+            };
         }
 
-        public HttpStatusCode ModifyProduct(Product product)
+        public Response ModifyProduct(Product product)
         {
             // Code to update product
-            var index = Product.Products.FindIndex(p => p.Id == product.Id);
+            var index = Database.Products.FindIndex(p => p.Id == product.Id);
             if (index == -1)
-                return HttpStatusCode.NotFound;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.NotFound,
+                    Message = "Product not found"
+                };
 
             if (
                 string.IsNullOrEmpty(product.Name)
                 || string.IsNullOrEmpty(product.Group)
                 || string.IsNullOrEmpty(product.SubGroup)
             )
-                return HttpStatusCode.BadRequest;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.BadRequest,
+                    Message = "Invalid product details"
+                };
 
             if (product.Price <= 0)
-                return HttpStatusCode.Forbidden;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Forbidden,
+                    Message = "Invalid product price"
+                };
 
             if (
-                Product.Products.Any(
+                Database.Products.Any(
                     p =>
                         p.Name == product.Name
                         && p.Group == product.Group
@@ -81,20 +116,18 @@ namespace OnlineShopping
                         && p.Id != product.Id
                 )
             )
-                return HttpStatusCode.Conflict;
+                return new Response
+                {
+                    StatusCode = HttpStatusCode.Conflict,
+                    Message = "Product already exists"
+                };
 
-            Product.Products[index] = product;
-            return HttpStatusCode.OK;
-        }
-
-        public void MakeShipment()
-        {
-            // Code to make shipment
-        }
-
-        public void ConfirmDelivery()
-        {
-            // Code to confirm delivery
+            Database.Products[index] = product;
+            return new Response
+            {
+                StatusCode = HttpStatusCode.OK,
+                Message = "Product modified successfully"
+            };
         }
     }
 }
